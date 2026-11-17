@@ -1,0 +1,11 @@
+route_id,route,priority,length_km,depot,lat,lon,salt_needed_t
+R01,N3 Cavan Bypass,1,14,Cavan,53.99,-7.345,2.1
+R02,N54 Butlersbridge Road,1,9,Cavan,54.04,-7.38,1.35
+R03,R212 Belturbet Road,2,16,Cavan,54.07,-7.44,2.4
+R04,R154 Kilnaleck Uplands,2,22,Ballyjamesduff,53.88,-7.33,3.3
+R05,R165 Bailieborough Road,2,18,Bailieborough,53.92,-6.98,2.7
+R06,Lough Gowna Lake Road,3,12,Ballyjamesduff,53.87,-7.54,1.8
+R07,R188 Cootehill Road,1,20,Cootehill,54.06,-7.09,3.0
+R08,N87 Ballyconnell Road,1,17,Cavan,54.11,-7.58,2.55
+R09,N3 Virginia South,1,21,Virginia,53.83,-7.08,3.15
+R10,R162 Kingscourt Hill,3,15,Bailieborough,53.9,-6.8,2.25
