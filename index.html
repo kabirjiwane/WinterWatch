@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WinterWatch</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --text: #1a202c;
+      --muted: #5a6577;
+      --border: #d5dce6;
+      --primary: #1d4ed8;
+      --primary-hover: #1e40af;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem 1rem;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1.25rem;
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.75rem;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .card h2 {
+      margin: 0 0 1rem;
+      font-size: 1.1rem;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      flex: 1 1 180px;
+    }
+    label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    select, input, textarea {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      background: #fff;
+    }
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+    .btn-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+    button {
+      padding: 0.6rem 1rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+      transition: background 0.15s ease;
+    }
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #e2e8f0;
+      color: var(--text);
+    }
+    button.secondary:hover:not(:disabled) {
+      background: #cbd5e1;
+    }
+    button.danger {
+      background: var(--danger);
+    }
+    button.danger:hover:not(:disabled) {
+      background: var(--danger-hover);
+    }
+    .status {
+      margin-top: 0.65rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .answer-box {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      white-space: pre-wrap;
+      font-size: 0.95rem;
+      display: none;
+    }
+    .answer-box.visible {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>WinterWatch</h1>
+      <p>Configure your AI provider key locally in your browser and ask anything.</p>
+    </header>
+
+    <!-- Settings Box -->
+    <section class="card" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Settings</h2>
+      <div class="row">
+        <div class="field" style="flex: 0 1 170px;">
+          <label for="provider">Provider</label>
+          <select id="provider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="groq">Groq</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="apiKey">API Key</label>
+          <input id="apiKey" type="password" placeholder="Paste your API key..." autocomplete="off" />
+        </div>
+
+        <div class="btn-group">
+          <button id="saveBtn" type="button">Save</button>
+          <button id="forgetBtn" type="button" class="danger">Forget key</button>
+        </div>
+      </div>
+      <div id="keyStatus" class="status">No API key saved yet.</div>
+    </section>
+
+    <!-- Question Box -->
+    <section class="card" aria-labelledby="ask-heading">
+      <h2 id="ask-heading">Ask a Question</h2>
+      <div class="field">
+        <label for="question">Your question</label>
+        <textarea id="question" placeholder="Ask anything..."></textarea>
+      </div>
+      <div class="row" style="margin-top: 0.75rem; justify-content: space-between;">
+        <span class="status" style="margin: 0;">Press Ctrl+Enter to submit</span>
+        <button id="askBtn" type="button">Ask</button>
+      </div>
+      <div id="answerBox" class="answer-box" role="region" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_PROVIDER = 'winterwatch_provider';
+    const STORAGE_KEY = 'winterwatch_api_key';
+
+    const providerEl = document.getElementById('provider');
+    const apiKeyEl = document.getElementById('apiKey');
+    const saveBtn = document.getElementById('saveBtn');
+    const forgetBtn = document.getElementById('forgetBtn');
+    const keyStatus = document.getElementById('keyStatus');
+
+    const questionEl = document.getElementById('question');
+    const askBtn = document.getElementById('askBtn');
+    const answerBox = document.getElementById('answerBox');
+
+    function loadSettings() {
+      const savedProvider = localStorage.getItem(STORAGE_PROVIDER);
+      const savedKey = localStorage.getItem(STORAGE_KEY);
+      if (savedProvider) providerEl.value = savedProvider;
+      if (savedKey) {
+        apiKeyEl.value = savedKey;
+        keyStatus.textContent = 'API key loaded from browser storage.';
+      }
+    }
+
+    saveBtn.addEventListener('click', () => {
+      const provider = providerEl.value;
+      const key = apiKeyEl.value.trim();
+      if (!key) {
+        keyStatus.textContent = 'Please enter an API key before saving.';
+        return;
+      }
+      localStorage.setItem(STORAGE_PROVIDER, provider);
+      localStorage.setItem(STORAGE_KEY, key);
+      keyStatus.textContent = `Saved ${provider.toUpperCase()} key locally in this browser.`;
+    });
+
+    forgetBtn.addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY);
+      apiKeyEl.value = '';
+      keyStatus.textContent = 'API key removed from browser storage.';
+    });
+
+    async function callProvider(provider, key, prompt) {
+      if (provider === 'gemini') {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }]
+            })
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response returned.';
+      }
+
+      if (provider === 'openai' || provider === 'groq') {
+        const url =
+          provider === 'openai'
+            ? 'https://api.openai.com/v1/chat/completions'
+            : 'https://api.groq.com/openai/v1/chat/completions';
+        const model = provider === 'openai' ? 'gpt-4o-mini' : 'llama-3.3-70b-versatile';
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+        return data.choices?.[0]?.message?.content || 'No response returned.';
+      }
+
+      if (provider === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-5-haiku-latest',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+        return data.content?.[0]?.text || 'No response returned.';
+      }
+
+      throw new Error('Unsupported provider selected.');
+    }
+
+    async function handleAsk() {
+      const provider = providerEl.value;
+      const key = apiKeyEl.value.trim() || localStorage.getItem(STORAGE_KEY) || '';
+      const prompt = questionEl.value.trim();
+
+      if (!key) {
+        answerBox.textContent = 'Please enter and save an API key in Settings first.';
+        answerBox.classList.add('visible');
+        return;
+      }
+      if (!prompt) {
+        answerBox.textContent = 'Please type a question first.';
+        answerBox.classList.add('visible');
+        return;
+      }
+
+      askBtn.disabled = true;
+      askBtn.textContent = 'Thinking...';
+      answerBox.textContent = 'Waiting for response...';
+      answerBox.classList.add('visible');
+
+      try {
+        const reply = await callProvider(provider, key, prompt);
+        answerBox.textContent = reply;
+      } catch (err) {
+        answerBox.textContent = `Error: ${err.message}`;
+      } finally {
+        askBtn.disabled = false;
+        askBtn.textContent = 'Ask';
+      }
+    }
+
+    askBtn.addEventListener('click', handleAsk);
+    questionEl.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        handleAsk();
+      }
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>
