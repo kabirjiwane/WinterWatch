@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>WinterWatch</title>
   <style>
     :root {
@@ -220,21 +221,58 @@
       keyStatus.textContent = 'API key removed from browser storage.';
     });
 
-    async function callProvider(provider, key, prompt) {
+    async function callProvider(provider, key, prompt, signal, onChunk) {
       if (provider === 'gemini') {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(key)}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal,
             body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }]
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                thinkingConfig: { thinkingLevel: 'LOW' }
+              }
             })
           }
         );
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response returned.';
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr || jsonStr === '[DONE]') continue;
+            try {
+              const chunk = JSON.parse(jsonStr);
+              const parts = chunk.candidates?.[0]?.content?.parts || [];
+              for (const part of parts) {
+                if (part.text && !part.thought) {
+                  fullText += part.text;
+                  onChunk(fullText);
+                }
+              }
+            } catch (_) {}
+          }
+        }
+        return fullText || 'No response returned.';
       }
 
       if (provider === 'openai' || provider === 'groq') {
@@ -250,6 +288,7 @@
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`
           },
+          signal,
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }]
@@ -269,6 +308,7 @@
             'anthropic-version': '2023-06-01',
             'anthropic-dangerous-direct-browser-access': 'true'
           },
+          signal,
           body: JSON.stringify({
             model: 'claude-haiku-4-5',
             max_tokens: 1024,
@@ -299,17 +339,33 @@
         return;
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      let seconds = 0;
       askBtn.disabled = true;
-      askBtn.textContent = 'Thinking...';
+      askBtn.textContent = 'Thinking... (0s)';
       answerBox.textContent = 'Waiting for response...';
       answerBox.classList.add('visible');
 
+      const timerId = setInterval(() => {
+        seconds += 1;
+        askBtn.textContent = `Thinking... (${seconds}s)`;
+      }, 1000);
+
       try {
-        const reply = await callProvider(provider, key, prompt);
+        const reply = await callProvider(provider, key, prompt, controller.signal, (partial) => {
+          answerBox.textContent = partial;
+        });
         answerBox.textContent = reply;
       } catch (err) {
-        answerBox.textContent = `Error: ${err.message}`;
+        if (err.name === 'AbortError') {
+          answerBox.textContent = 'Request timed out after 30 seconds. Check your internet connection or API key and try again.';
+        } else {
+          answerBox.textContent = `Error: ${err.message}`;
+        }
       } finally {
+        clearTimeout(timeoutId);
+        clearInterval(timerId);
         askBtn.disabled = false;
         askBtn.textContent = 'Ask';
       }
