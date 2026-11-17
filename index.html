@@ -103,13 +103,6 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
-    button.secondary {
-      background: #e2e8f0;
-      color: var(--text);
-    }
-    button.secondary:hover:not(:disabled) {
-      background: #cbd5e1;
-    }
     button.danger {
       background: var(--danger);
     }
@@ -277,7 +270,7 @@
             'anthropic-dangerous-direct-browser-access': 'true'
           },
           body: JSON.stringify({
-            model: 'claude-3-5-haiku-latest',
+            model: 'claude-haiku-4-5',
             max_tokens: 1024,
             messages: [{ role: 'user', content: prompt }]
           })
