@@ -221,58 +221,69 @@
       keyStatus.textContent = 'API key removed from browser storage.';
     });
 
-    async function callProvider(provider, key, prompt, signal, onChunk) {
+    async function callProvider(provider, key, prompt, signal, onChunk, onStatus) {
       if (provider === 'gemini') {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal,
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                thinkingConfig: { thinkingLevel: 'LOW' }
-              }
-            })
-          }
-        );
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error?.message || `HTTP ${res.status}`);
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullText = '';
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          const lines = buffer.split('\n');
-          buffer = lines.pop();
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr || jsonStr === '[DONE]') continue;
-            try {
-              const chunk = JSON.parse(jsonStr);
-              const parts = chunk.candidates?.[0]?.content?.parts || [];
-              for (const part of parts) {
-                if (part.text && !part.thought) {
-                  fullText += part.text;
-                  onChunk(fullText);
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal,
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  thinkingConfig: { thinkingLevel: 'LOW' }
                 }
-              }
-            } catch (_) {}
+              })
+            }
+          );
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const msg = errData.error?.message || `HTTP ${res.status}`;
+            const isBusy = res.status === 503 || res.status === 429 || /high demand|overloaded|try again/i.test(msg);
+            if (isBusy && attempt < maxAttempts) {
+              const waitSec = attempt * 3;
+              onStatus(`Server busy (attempt ${attempt}/${maxAttempts}). Retrying in ${waitSec}s...`);
+              await new Promise((r) => setTimeout(r, waitSec * 1000));
+              continue;
+            }
+            throw new Error(msg);
           }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let fullText = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const jsonStr = line.slice(6).trim();
+              if (!jsonStr || jsonStr === '[DONE]') continue;
+              try {
+                const chunk = JSON.parse(jsonStr);
+                const parts = chunk.candidates?.[0]?.content?.parts || [];
+                for (const part of parts) {
+                  if (part.text && !part.thought) {
+                    fullText += part.text;
+                    onChunk(fullText);
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+          return fullText || 'No response returned.';
         }
-        return fullText || 'No response returned.';
       }
 
       if (provider === 'openai' || provider === 'groq') {
@@ -340,7 +351,7 @@
       }
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
       let seconds = 0;
       askBtn.disabled = true;
       askBtn.textContent = 'Thinking... (0s)';
@@ -353,13 +364,18 @@
       }, 1000);
 
       try {
-        const reply = await callProvider(provider, key, prompt, controller.signal, (partial) => {
-          answerBox.textContent = partial;
-        });
+        const reply = await callProvider(
+          provider,
+          key,
+          prompt,
+          controller.signal,
+          (partial) => { answerBox.textContent = partial; },
+          (statusMsg) => { answerBox.textContent = statusMsg; }
+        );
         answerBox.textContent = reply;
       } catch (err) {
         if (err.name === 'AbortError') {
-          answerBox.textContent = 'Request timed out after 30 seconds. Check your internet connection or API key and try again.';
+          answerBox.textContent = 'Request timed out after 45 seconds. Please try again.';
         } else {
           answerBox.textContent = `Error: ${err.message}`;
         }
