@@ -221,6 +221,31 @@
       keyStatus.textContent = 'API key removed from browser storage.';
     });
 
+    async function resolveGroqModel(key, signal) {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+        signal
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+
+      const chatModels = (data.data || []).filter(
+        (m) =>
+          m.active !== false &&
+          !/(whisper|tts|orpheus|playai|guard|safeguard|embed|moderation)/i.test(m.id)
+      );
+      if (!chatModels.length) {
+        throw new Error('No active chat models available for this Groq API key.');
+      }
+
+      const chosen =
+        chatModels.find((m) => /llama-4|llama.*70b|qwen|gpt-oss|kimi|deepseek/i.test(m.id)) ||
+        chatModels.find((m) => /llama|gemma|mistral/i.test(m.id)) ||
+        chatModels[0];
+
+      return chosen.id;
+    }
+
     async function callProvider(provider, key, prompt, signal, onChunk, onStatus) {
       if (provider === 'gemini') {
         const maxAttempts = 3;
@@ -291,7 +316,8 @@
           provider === 'openai'
             ? 'https://api.openai.com/v1/chat/completions'
             : 'https://api.groq.com/openai/v1/chat/completions';
-        const model = provider === 'openai' ? 'gpt-4o-mini' : 'llama-3.3-70b-versatile';
+        const model =
+          provider === 'openai' ? 'gpt-4o-mini' : await resolveGroqModel(key, signal);
 
         const res = await fetch(url, {
           method: 'POST',
